@@ -1,0 +1,91 @@
+#Import libraries
+
+import string
+import sys
+import PyPDF2
+from bs4 import BeautifulSoup
+import urllib.request
+import urllib.parse
+import io
+from urllib.request import Request, urlopen
+
+from openpyxl import Workbook
+from openpyxl.compat import range
+from openpyxl.utils import get_column_letter
+from openpyxl import load_workbook
+
+sys.stdout = open(sys.stdout.fileno(), mode='w', encoding='utf8', buffering=1)
+
+#Create excel workbook with 1 tab for company names, 1 tab containing the links to visit
+wb = Workbook()
+wb = load_workbook('filename.xlsx', data_only=True)
+dest_filename = wb
+ws1 = wb["companies"]
+ws2 = wb["links"]
+rowname = 2
+targetlist = []
+
+#Create one tab for each of the companies to be analyzed
+for row in ws1.iter_rows(min_row=1, max_col=10, max_row=9):
+    cellname = "B" + str(rowname)
+    d = ws1[cellname].value
+    wb.create_sheet(d)
+    rowname = rowname + 1
+
+rowname = 2
+sheetnumber = 2
+counts = dict()
+
+#Visit websites, retrieve pdf documents and count words
+for row in ws2.iter_rows(min_row=1, max_col=10, max_row=17):
+    companyname = "B" + str(rowname)
+    company = ws2[companyname].value
+    print(company)
+    cellname = "C" + str(rowname)
+    link = ws2[cellname].value
+    print(link)
+    link = Request(link, headers={'User-Agent': 'Mozilla/5.0'})
+    rowname = rowname + 1
+    try:
+        connection = urllib.request.urlopen(link).read()
+        f = io.BytesIO(connection)
+        pdfFile = PyPDF2.PdfFileReader(f)
+        if pdfFile.isEncrypted:
+            try:
+                pdfFile.decrypt('')
+                print('File Decrypted (PyPDF2)')
+            except:
+                print("encryption error")
+                continue
+        pagenumbers = pdfFile.getNumPages()
+        print(link, pagenumbers)
+        for page in range(pdfFile.getNumPages()):
+            currentPage = pdfFile.getPage(page)
+            text = currentPage.extractText()
+            #print(text)
+            translator = str.maketrans('', '', string.punctuation)
+            line = text.translate(translator)
+            #line = line.translate(bytes.maketrans('','',string.punctuation))
+            line = text.lower()
+            words = line.split()
+            #print(words)
+            for word in words:
+                if word not in counts:
+                    counts[word] = 1
+                else:
+                    counts[word] += 1
+        lst = list()
+        active_ws= wb.get_sheet_by_name(company)
+        for key, val in counts.items():
+            lst.append( (val, key) )
+            lst.sort(reverse=True)
+        for key, val in lst:
+            active_ws.append([key, val])
+        counts.clear()
+
+    except:
+        print("error")
+        continue
+#save results
+wb.save("filename.xlsx")
+exit()
